@@ -1,4 +1,4 @@
-const CACHE = "leon-v1";
+const CACHE = "leon-v2";
 const ASSETS = [
   "./",
   "./index.html",
@@ -28,7 +28,6 @@ self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
   const url = new URL(req.url);
-  // Don't cache API calls
   if (url.hostname === "api.groq.com") return;
 
   event.respondWith(

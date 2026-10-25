@@ -37,7 +37,13 @@
     <main class="chat" id="chat" role="log" aria-live="polite"></main>
 
     <form class="composer" id="composer" autocomplete="off">
+      <div class="attach-preview hidden" id="attachPreview" aria-live="polite"></div>
       <div class="composer-inner">
+        <button type="button" class="attach-btn" id="attachBtn" aria-label="附件" title="影相／揀相／檔案">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+          </svg>
+        </button>
         <textarea
           id="input"
           rows="1"
@@ -52,6 +58,39 @@
         </button>
       </div>
     </form>
+  </div>
+
+  <input type="file" id="cameraInput" accept="image/*" capture="environment" class="sr-only" tabindex="-1" aria-hidden="true" />
+  <input type="file" id="galleryInput" accept="image/*" multiple class="sr-only" tabindex="-1" aria-hidden="true" />
+  <input type="file" id="fileInput" accept="image/*,application/pdf,text/*,.txt,.md,.csv,.json,.pdf" multiple class="sr-only" tabindex="-1" aria-hidden="true" />
+
+  <div class="overlay hidden" id="attachOverlay" role="dialog" aria-modal="true" aria-labelledby="attachTitle">
+    <div class="sheet attach-sheet">
+      <div class="sheet-handle"></div>
+      <h2 id="attachTitle">加入附件</h2>
+      <button type="button" class="attach-option" id="optCamera">
+        <span class="attach-option-icon" aria-hidden="true">📷</span>
+        <span>
+          <strong>影相</strong>
+          <small>打開相機即影即用</small>
+        </span>
+      </button>
+      <button type="button" class="attach-option" id="optGallery">
+        <span class="attach-option-icon" aria-hidden="true">🖼️</span>
+        <span>
+          <strong>選擇相片</strong>
+          <small>由相簿揀一張或多張</small>
+        </span>
+      </button>
+      <button type="button" class="attach-option" id="optFile">
+        <span class="attach-option-icon" aria-hidden="true">📎</span>
+        <span>
+          <strong>選擇檔案</strong>
+          <small>圖片、PDF、文字檔等</small>
+        </span>
+      </button>
+      <button type="button" class="btn ghost" id="closeAttachBtn">取消</button>
+    </div>
   </div>
 
   <div class="overlay hidden" id="settingsOverlay" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
@@ -82,7 +121,10 @@
         <select id="modelSelect">
           <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile</option>
           <option value="llama-3.1-8b-instant">llama-3.1-8b-instant（較快）</option>
+          <option value="meta-llama/llama-4-scout-17b-16e-instruct">llama-4-scout（可睇相）</option>
+          <option value="qwen/qwen3.8-27b">qwen3.8-27b（可睇相）</option>
         </select>
+        <p class="hint">傳相時會自動改用可睇相嘅模型（若你未揀）。</p>
       </div>
 
       <div class="sheet-actions">

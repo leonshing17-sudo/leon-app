@@ -8,18 +8,31 @@
     history: "leon_chat_history",
   };
 
+  const VISION_MODELS = new Set([
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "qwen/qwen3.8-27b",
+  ]);
+  const DEFAULT_VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
+  const MAX_ATTACHMENTS = 5;
+  const MAX_IMAGE_EDGE = 1280;
+  const MAX_TEXT_CHARS = 40000;
+  const MAX_FILE_BYTES = 12 * 1024 * 1024;
+
   const SYSTEM_PROMPT =
     "You are Leon, an all-purpose helpful AI assistant. " +
     "Reply in the same language the user writes in (Cantonese/Traditional Chinese, English, Mandarin, or any other). " +
     "Be warm, clear, and friendly like a helpful friend. " +
     "You are especially good at homework, study tips, everyday life questions, and practical help for a Hong Kong Form 1 student — " +
     "but you help with anything: writing, coding, planning, translating, explaining concepts, brainstorming, and daily tasks. " +
+    "When the user sends images, describe and reason about what you see helpfully. " +
+    "When they send files, acknowledge the file and use any provided text content. " +
     "Keep answers concise on mobile unless the user asks for detail. Use short paragraphs and bullet points when helpful.";
 
   const WELCOME =
     "嗨！我係 Leon 👋\n" +
     "一個咩都會幫到手嘅 AI 助手——功課、溫習、寫嘢、翻譯、日常問題，儘管問我。\n\n" +
-    "而家係「示範模式」，唔使 API Key 都可以傾。想用真正 AI，撳右上角設定，貼上免費 Groq API Key 就得。";
+    "而家可以影相、揀相，或者傳檔案畀我（撳輸入欄左邊 📎）。\n\n" +
+    "而家係「示範模式」，唔使 API Key 都可以傾。想用真正 AI（包括睇相），撳右上角設定，貼上免費 Groq API Key 就得。";
 
   const els = {
     chat: document.getElementById("chat"),
@@ -35,10 +48,22 @@
     saveSettingsBtn: document.getElementById("saveSettingsBtn"),
     closeSettingsBtn: document.getElementById("closeSettingsBtn"),
     clearChatBtn: document.getElementById("clearChatBtn"),
+    attachBtn: document.getElementById("attachBtn"),
+    attachOverlay: document.getElementById("attachOverlay"),
+    closeAttachBtn: document.getElementById("closeAttachBtn"),
+    optCamera: document.getElementById("optCamera"),
+    optGallery: document.getElementById("optGallery"),
+    optFile: document.getElementById("optFile"),
+    cameraInput: document.getElementById("cameraInput"),
+    galleryInput: document.getElementById("galleryInput"),
+    fileInput: document.getElementById("fileInput"),
+    attachPreview: document.getElementById("attachPreview"),
   };
 
-  /** @type {{role: string, content: string}[]} */
+  /** @type {{role: string, content: string, attachments?: object[]}[]} */
   let messages = [];
+  /** @type {{id: string, name: string, type: string, size: number, kind: string, previewUrl?: string, dataUrl?: string, textContent?: string}[]} */
+  let pending = [];
   let busy = false;
 
   function loadSettings() {
@@ -46,7 +71,6 @@
     const apiKey = localStorage.getItem(STORAGE.apiKey) || "";
     const model =
       localStorage.getItem(STORAGE.model) || "llama-3.3-70b-versatile";
-    // Default to demo mode if never set
     const demoMode = demo === null ? true : demo === "1";
     return { demoMode, apiKey, model };
   }
@@ -72,11 +96,70 @@
     }
   }
 
+  function formatSize(bytes) {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+  }
+
+  function uid() {
+    return (
+      Date.now().toString(36) +
+      Math.random().toString(36).slice(2, 8)
+    );
+  }
+
+  function isTextLike(file) {
+    const t = (file.type || "").toLowerCase();
+    const n = (file.name || "").toLowerCase();
+    if (t.startsWith("text/")) return true;
+    if (
+      t === "application/json" ||
+      t === "application/csv" ||
+      t === "application/xml"
+    )
+      return true;
+    return /\.(txt|md|csv|json|log|xml|html|htm|js|ts|css|py|c|cpp|h|java|rb|go|rs|yml|yaml)$/.test(
+      n
+    );
+  }
+
   function persistHistory() {
     try {
-      localStorage.setItem(STORAGE.history, JSON.stringify(messages.slice(-40)));
+      const slim = messages.slice(-40).map((m) => {
+        const copy = { role: m.role, content: m.content };
+        if (m.attachments && m.attachments.length) {
+          copy.attachments = m.attachments.map((a) => ({
+            name: a.name,
+            type: a.type,
+            size: a.size,
+            kind: a.kind,
+            // Keep a lighter preview for images so history still shows thumbs
+            previewUrl:
+              a.kind === "image" && a.previewUrl && a.previewUrl.length < 180000
+                ? a.previewUrl
+                : undefined,
+          }));
+        }
+        return copy;
+      });
+      localStorage.setItem(STORAGE.history, JSON.stringify(slim));
     } catch (_) {
-      /* quota */
+      try {
+        const bare = messages.slice(-40).map((m) => ({
+          role: m.role,
+          content: m.content,
+          attachments: (m.attachments || []).map((a) => ({
+            name: a.name,
+            type: a.type,
+            size: a.size,
+            kind: a.kind,
+          })),
+        }));
+        localStorage.setItem(STORAGE.history, JSON.stringify(bare));
+      } catch (__) {
+        /* quota */
+      }
     }
   }
 
@@ -90,6 +173,38 @@
     return null;
   }
 
+  function renderAttachmentsInto(container, attachments) {
+    if (!attachments || !attachments.length) return;
+    const wrap = document.createElement("div");
+    wrap.className = "bubble-attachments";
+    for (const a of attachments) {
+      if (a.kind === "image" && a.previewUrl) {
+        const img = document.createElement("img");
+        img.className = "bubble-att-img";
+        img.src = a.previewUrl;
+        img.alt = a.name || "相片";
+        img.loading = "lazy";
+        wrap.appendChild(img);
+      } else {
+        const chip = document.createElement("div");
+        chip.className = "bubble-att-file";
+        const icon = document.createElement("span");
+        icon.textContent = a.kind === "image" ? "🖼️" : "📄";
+        const name = document.createElement("span");
+        name.className = "att-name";
+        name.textContent = a.name || "檔案";
+        const meta = document.createElement("span");
+        meta.className = "att-meta";
+        meta.textContent = formatSize(a.size || 0);
+        chip.appendChild(icon);
+        chip.appendChild(name);
+        chip.appendChild(meta);
+        wrap.appendChild(chip);
+      }
+    }
+    container.appendChild(wrap);
+  }
+
   function appendBubble(role, content, opts = {}) {
     const row = document.createElement("div");
     row.className = `msg ${role}`;
@@ -99,7 +214,15 @@
       bubble.innerHTML =
         '<div class="typing" aria-label="輸入中"><span></span><span></span><span></span></div>';
     } else {
-      bubble.textContent = content;
+      if (opts.attachments && opts.attachments.length) {
+        renderAttachmentsInto(bubble, opts.attachments);
+      }
+      if (content) {
+        const text = document.createElement("div");
+        text.className = "bubble-text";
+        text.textContent = content;
+        bubble.appendChild(text);
+      }
     }
     row.appendChild(bubble);
     els.chat.appendChild(row);
@@ -130,24 +253,199 @@
     els.overlay.classList.add("hidden");
   }
 
-  /** Demo-mode: template replies that echo intent + tip, in user's language pattern */
-  function demoReply(userText) {
-    const t = userText.trim();
+  function openAttach() {
+    els.attachOverlay.classList.remove("hidden");
+  }
+
+  function closeAttach() {
+    els.attachOverlay.classList.add("hidden");
+  }
+
+  function renderPending() {
+    const box = els.attachPreview;
+    box.innerHTML = "";
+    if (!pending.length) {
+      box.classList.add("hidden");
+      return;
+    }
+    box.classList.remove("hidden");
+    for (const a of pending) {
+      const chip = document.createElement("div");
+      chip.className =
+        "attach-chip" + (a.kind === "image" && a.previewUrl ? "" : " file-chip");
+      if (a.kind === "image" && a.previewUrl) {
+        const img = document.createElement("img");
+        img.src = a.previewUrl;
+        img.alt = a.name;
+        chip.appendChild(img);
+      } else {
+        const icon = document.createElement("div");
+        icon.className = "file-icon";
+        icon.textContent = a.kind === "image" ? "🖼️" : "📄";
+        const label = document.createElement("div");
+        label.className = "file-label";
+        label.textContent = a.name;
+        chip.appendChild(icon);
+        chip.appendChild(label);
+      }
+      const rm = document.createElement("button");
+      rm.type = "button";
+      rm.className = "remove-att";
+      rm.setAttribute("aria-label", "移除 " + a.name);
+      rm.textContent = "×";
+      rm.addEventListener("click", () => {
+        pending = pending.filter((x) => x.id !== a.id);
+        renderPending();
+      });
+      chip.appendChild(rm);
+      box.appendChild(chip);
+    }
+  }
+
+  function fileToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error || new Error("read failed"));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function resizeImageToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        try {
+          let { width, height } = img;
+          const max = MAX_IMAGE_EDGE;
+          if (width > max || height > max) {
+            const scale = Math.min(max / width, max / height);
+            width = Math.round(width * scale);
+            height = Math.round(height * scale);
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, width, height);
+          const outType =
+            file.type === "image/png" || file.type === "image/webp"
+              ? file.type
+              : "image/jpeg";
+          const quality = outType === "image/jpeg" ? 0.82 : 0.92;
+          resolve(canvas.toDataURL(outType, quality));
+        } catch (err) {
+          reject(err);
+        } finally {
+          URL.revokeObjectURL(url);
+        }
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error("image load failed"));
+      };
+      img.src = url;
+    });
+  }
+
+  async function processFile(file) {
+    if (!file) return null;
+    if (file.size > MAX_FILE_BYTES) {
+      appendBubble(
+        "system",
+        `「${file.name}」太大（超過 ${formatSize(MAX_FILE_BYTES)}），請揀細啲嘅檔案。`
+      );
+      return null;
+    }
+    const isImage = (file.type || "").startsWith("image/");
+    const att = {
+      id: uid(),
+      name: file.name || (isImage ? "photo.jpg" : "file"),
+      type: file.type || "application/octet-stream",
+      size: file.size,
+      kind: isImage ? "image" : "file",
+    };
+    if (isImage) {
+      try {
+        att.dataUrl = await resizeImageToDataUrl(file);
+        att.previewUrl = att.dataUrl;
+      } catch (_) {
+        att.dataUrl = await fileToDataUrl(file);
+        att.previewUrl = att.dataUrl;
+      }
+    } else if (isTextLike(file)) {
+      try {
+        let text = await file.text();
+        if (text.length > MAX_TEXT_CHARS) {
+          text = text.slice(0, MAX_TEXT_CHARS) + "\n…(截斷)";
+        }
+        att.textContent = text;
+      } catch (_) {
+        /* ignore */
+      }
+    }
+    return att;
+  }
+
+  async function addFiles(fileList) {
+    const files = Array.from(fileList || []);
+    for (const file of files) {
+      if (pending.length >= MAX_ATTACHMENTS) {
+        appendBubble(
+          "system",
+          `一次最多 ${MAX_ATTACHMENTS} 個附件。`
+        );
+        break;
+      }
+      const att = await processFile(file);
+      if (att) pending.push(att);
+    }
+    renderPending();
+  }
+
+  function demoReply(userText, attachments) {
+    const t = (userText || "").trim();
     const lower = t.toLowerCase();
     const isZh =
       /[\u4e00-\u9fff]/.test(t) ||
-      /[嘅係咗唔喺嚟邊點]/.test(t);
-    const isCanto = /[嘅係咗唔喺嚟邊點咩啲咁]/.test(t);
+      /[嘅係咗唔喺嚟邊點]/.test(t) ||
+      (!t && attachments && attachments.length);
+    const isCanto =
+      /[嘅係咗唔喺嚟邊點咩啲咁]/.test(t) ||
+      (!t && attachments && attachments.length);
 
-    // Greetings
-    if (/^(hi|hello|hey|哈囉|你好|嗨|早晨|午安|晚安)\b/i.test(t) || t.length < 3 && /^(yo|hey)$/i.test(t)) {
+    if (attachments && attachments.length) {
+      const lines = attachments.map(
+        (a) =>
+          `• ${a.name}（${a.kind === "image" ? "相片" : "檔案"} · ${formatSize(a.size)}）`
+      );
       if (isCanto || isZh) {
-        return "嗨！我係 Leon～有咩想問或者想幫手？功課、溫習計劃、翻譯、寫電郵，我都得。";
+        return (
+          `收到你傳嘅附件，我已經接收到喇 ✅\n\n` +
+          lines.join("\n") +
+          (t ? `\n\n你仲講：「${t.slice(0, 60)}${t.length > 60 ? "…" : ""}」` : "") +
+          `\n\n示範模式會確認檔名同大小。想我真正睇相／讀內容 → 設定關閉示範模式，貼上免費 Groq API Key（會用可睇相模型）。`
+        );
       }
-      return "Hey! I'm Leon — your all-purpose helper. Ask me about homework, study plans, writing, translating, or everyday stuff.";
+      return (
+        `Got your attachment(s) — received ✅\n\n` +
+        lines.join("\n") +
+        (t ? `\n\nYou also said: “${t.slice(0, 60)}${t.length > 60 ? "…" : ""}”` : "") +
+        `\n\nDemo mode confirms name & size. For real vision/OCR, turn off Demo and add a free Groq API key.`
+      );
     }
 
-    // Homework / study
+    if (
+      /^(hi|hello|hey|哈囉|你好|嗨|早晨|午安|晚安)\b/i.test(t) ||
+      (t.length < 3 && /^(yo|hey)$/i.test(t))
+    ) {
+      if (isCanto || isZh) {
+        return "嗨！我係 Leon～有咩想問或者想幫手？可以打字，亦可以撳 📎 影相／揀相／傳檔案。";
+      }
+      return "Hey! I'm Leon — ask me anything, or tap 📎 to send a photo or file.";
+    }
+
     if (/功課|作业|作業|homework|study|溫習|复习|考試|考试|exam|math|數學|数学|英文|english/i.test(t)) {
       if (isCanto || isZh) {
         return (
@@ -156,100 +454,135 @@
           "1. 先寫清楚題目同已知條件\n" +
           "2. 一步一步解，唔好跳步\n" +
           "3. 做完用自己嘅話覆述答案\n\n" +
-          "貼上完整題目，或者去設定加 Groq API Key，我就可以詳細教你。"
+          "亦可影題目相傳畀我（📎）。加 Groq API Key 就可以詳細教你。"
         );
       }
       return (
         `Got it — about “${t.slice(0, 40)}${t.length > 40 ? "…" : ""}”.\n\n` +
-        "Demo tip:\n" +
-        "1. Write the full question and known info\n" +
-        "2. Solve step by step\n" +
-        "3. Check by restating the answer\n\n" +
-        "Paste the full problem, or add a free Groq API key in Settings for full AI help."
+        "Demo tip: write the full question, solve step by step, then check.\n" +
+        "You can also photograph the problem (📎). Add a Groq key for full AI help."
       );
     }
 
-    // Translate
     if (/譯|翻译|翻譯|translate|translation/i.test(t)) {
       if (isCanto || isZh) {
         return (
           `你想翻譯：「${t.slice(0, 60)}${t.length > 60 ? "…" : ""}」\n\n` +
-          "示範模式可以記住你嘅意圖。請寫清楚：原文 + 想譯成邊種語言。\n" +
-          "例如：「請將呢句譯成英文：……」\n\n" +
-          "開真 AI（設定 → Groq Key）就可以即時翻譯。"
+          "請寫清楚：原文 + 想譯成邊種語言。開真 AI（設定 → Groq Key）就可以即時翻譯。"
         );
       }
       return (
         `You asked to translate: “${t.slice(0, 60)}${t.length > 60 ? "…" : ""}”\n\n` +
-        "In demo mode, tell me the source text and target language clearly.\n" +
-        "Add a free Groq API key in Settings for live translation."
+        "Tell me source text + target language. Add a Groq key for live translation."
       );
     }
 
-    // Writing help
     if (/寫|写|作文|電郵|电邮|email|essay|letter|草稿/i.test(t)) {
       if (isCanto || isZh) {
         return (
           `明白，你想寫嘢：「${t.slice(0, 40)}${t.length > 40 ? "…" : ""}」\n\n` +
-          "結構建議：開頭 → 重點 2–3 點 → 結尾。\n" +
-          "告訴我：對象係邊個、長度、語氣（正式／輕鬆），示範模式可以幫你列大綱；加 API Key 就可以直接幫你起草。"
+          "結構：開頭 → 重點 2–3 點 → 結尾。告訴我對象、長度、語氣；加 API Key 就可以起草。"
         );
       }
       return (
-        `Understood — writing help for: “${t.slice(0, 40)}${t.length > 40 ? "…" : ""}”\n\n` +
-        "Structure tip: hook → 2–3 points → close.\n" +
-        "Tell me audience, length, and tone. Add a Groq key in Settings for a full draft."
+        `Writing help for: “${t.slice(0, 40)}${t.length > 40 ? "…" : ""}”\n\n` +
+        "Hook → 2–3 points → close. Tell me audience, length, tone. Add a Groq key for a draft."
       );
     }
 
-    // Time / schedule
     if (/時間|时间|日程|schedule|計劃|计划|reminder|提醒/i.test(t)) {
       if (isCanto || isZh) {
         return (
           `關於時間／計劃：「${t.slice(0, 40)}${t.length > 40 ? "…" : ""}」\n\n` +
-          "小建議：用「今日必須做 / 可以做 / 可延後」三欄列任務，每項估時間。\n" +
-          "加 Groq Key 之後我可以幫你度更細嘅時間表。"
+          "建議用「必須做 / 可以做 / 可延後」三欄。加 Groq Key 可以幫你度時間表。"
         );
       }
       return (
         `About planning: “${t.slice(0, 40)}${t.length > 40 ? "…" : ""}”\n\n` +
-        "Tip: sort tasks into Must / Should / Later and estimate minutes each.\n" +
-        "With a Groq API key I can build a full schedule for you."
+        "Sort Must / Should / Later. With a Groq key I can build a schedule."
       );
     }
 
-    // Default: echo intent + tip
     const snippet = t.length > 80 ? t.slice(0, 80) + "…" : t;
     if (isCanto) {
       return (
         `收到你講：「${snippet}」\n\n` +
-        "我係 Leon，示範模式而家會用模板回覆。你可以：\n" +
-        "• 問功課／溫習方法\n" +
-        "• 請我翻譯或改文\n" +
-        "• 傾日常問題\n\n" +
-        "想要真正 AI 對話 → 右上角設定 → 關閉示範模式 → 貼上 https://console.groq.com/keys 嘅免費 Key。"
+        "我係 Leon，示範模式而家會用模板回覆。可以問功課、翻譯、寫文，或者撳 📎 傳相／檔案。\n\n" +
+        "想要真正 AI → 設定 → 關閉示範模式 → 貼上 console.groq.com/keys 免費 Key。"
       );
     }
     if (isZh) {
       return (
         `收到：「${snippet}」\n\n` +
-        "我是 Leon。示範模式會用模板回覆。你可以問功課、翻譯、寫作或日常問題。\n\n" +
-        "要真正 AI：設定 → 關閉示範模式 → 貼上免費 Groq API Key（console.groq.com/keys）。"
+        "我是 Leon。示範模式會用模板回覆。可問功課、翻譯、寫作，或用 📎 傳相片／檔案。\n\n" +
+        "要真正 AI：設定 → 關閉示範模式 → 貼上免費 Groq API Key。"
       );
     }
     return (
       `Got your message: “${snippet}”\n\n` +
-      "I'm Leon. Demo mode uses helpful template replies. Try homework help, translation, writing, or everyday questions.\n\n" +
+      "I'm Leon. Demo mode uses template replies. Try homework, translation, writing, or 📎 attachments.\n\n" +
       "For real AI: Settings → turn off Demo → paste a free key from console.groq.com/keys."
     );
   }
 
-  async function callGroq(history) {
-    const { apiKey, model } = loadSettings();
-    if (!apiKey) {
-      const err = new Error("NO_KEY");
-      throw err;
+  function buildApiUserContent(text, attachments) {
+    const atts = attachments || [];
+    const images = atts.filter((a) => a.kind === "image" && a.dataUrl);
+    const files = atts.filter((a) => a.kind !== "image" || !a.dataUrl);
+
+    let textParts = [];
+    if (text && text.trim()) textParts.push(text.trim());
+    for (const f of files) {
+      if (f.textContent) {
+        textParts.push(
+          `\n[Attached text file: ${f.name} (${formatSize(f.size)})]\n${f.textContent}`
+        );
+      } else if (f.kind === "image") {
+        textParts.push(
+          `\n[User sent an image: ${f.name}, ${formatSize(f.size)}, type ${f.type}. Preview unavailable for API.]`
+        );
+      } else {
+        textParts.push(
+          `\n[User attached file: ${f.name}, ${formatSize(f.size)}, type ${f.type}. Binary content not included.]`
+        );
+      }
     }
+
+    const textBody =
+      textParts.join("\n").trim() ||
+      (images.length
+        ? "Please look at the attached image(s) and respond helpfully."
+        : "(empty)");
+
+    if (!images.length) {
+      return textBody;
+    }
+
+    /** Multimodal content for Groq vision models */
+    const content = [{ type: "text", text: textBody }];
+    for (const img of images.slice(0, 5)) {
+      content.push({
+        type: "image_url",
+        image_url: { url: img.dataUrl },
+      });
+    }
+    return content;
+  }
+
+  function pickModel(hasImages) {
+    const { model } = loadSettings();
+    if (hasImages && !VISION_MODELS.has(model)) {
+      return DEFAULT_VISION_MODEL;
+    }
+    return model;
+  }
+
+  async function callGroq(history, opts = {}) {
+    const { apiKey } = loadSettings();
+    if (!apiKey) {
+      throw new Error("NO_KEY");
+    }
+    const model = opts.model || loadSettings().model;
     const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -279,9 +612,42 @@
     return text.trim();
   }
 
+  function historyForApi() {
+    return messages
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .slice(-20)
+      .map((m) => {
+        if (m.role === "assistant") {
+          return { role: "assistant", content: m.content };
+        }
+        // Rebuild multimodal if this turn had image dataUrls still in memory
+        if (m.attachments && m.attachments.some((a) => a.dataUrl)) {
+          return {
+            role: "user",
+            content: buildApiUserContent(m.content, m.attachments),
+          };
+        }
+        // Fallback: string content + file metadata notes
+        if (m.attachments && m.attachments.length) {
+          const note = m.attachments
+            .map(
+              (a) =>
+                `[attachment: ${a.name}, ${a.kind}, ${formatSize(a.size || 0)}]`
+            )
+            .join(" ");
+          return {
+            role: "user",
+            content: (m.content || "") + (m.content ? "\n" : "") + note,
+          };
+        }
+        return { role: "user", content: m.content };
+      });
+  }
+
   async function handleSend(text) {
-    const trimmed = text.trim();
-    if (!trimmed || busy) return;
+    const trimmed = (text || "").trim();
+    const atts = pending.slice();
+    if ((!trimmed && !atts.length) || busy) return;
 
     const { demoMode, apiKey } = loadSettings();
     if (!demoMode && !apiKey) {
@@ -296,9 +662,28 @@
     busy = true;
     els.sendBtn.disabled = true;
 
-    messages.push({ role: "user", content: trimmed });
-    appendBubble("user", trimmed);
+    const displayAtts = atts.map((a) => ({
+      name: a.name,
+      type: a.type,
+      size: a.size,
+      kind: a.kind,
+      previewUrl: a.previewUrl,
+      dataUrl: a.dataUrl,
+      textContent: a.textContent,
+    }));
+
+    messages.push({
+      role: "user",
+      content: trimmed,
+      attachments: displayAtts.length ? displayAtts : undefined,
+    });
+    appendBubble("user", trimmed, {
+      attachments: displayAtts.length ? displayAtts : undefined,
+    });
     persistHistory();
+
+    pending = [];
+    renderPending();
     els.input.value = "";
     autoResize();
 
@@ -308,12 +693,12 @@
       let reply;
       if (demoMode) {
         await new Promise((r) => setTimeout(r, 400 + Math.random() * 400));
-        reply = demoReply(trimmed);
+        reply = demoReply(trimmed, displayAtts);
       } else {
-        const history = messages
-          .filter((m) => m.role === "user" || m.role === "assistant")
-          .slice(-20);
-        reply = await callGroq(history);
+        const hasImages = displayAtts.some((a) => a.kind === "image" && a.dataUrl);
+        const model = pickModel(hasImages);
+        const history = historyForApi();
+        reply = await callGroq(history, { model });
       }
       removeNode(typing);
       messages.push({ role: "assistant", content: reply });
@@ -321,7 +706,6 @@
       persistHistory();
     } catch (err) {
       removeNode(typing);
-      // Keep the user message in history/UI; show error as a system bubble
       const msg =
         err.message === "NO_KEY"
           ? "未設定 API Key。請開設定或啟用示範模式。"
@@ -342,7 +726,9 @@
       messages = saved;
       for (const m of messages) {
         if (m.role === "user" || m.role === "assistant") {
-          appendBubble(m.role, m.content);
+          appendBubble(m.role, m.content, {
+            attachments: m.attachments,
+          });
         }
       }
     } else {
@@ -373,6 +759,32 @@
     if (e.target === els.overlay) closeSettings();
   });
 
+  els.attachBtn.addEventListener("click", openAttach);
+  els.closeAttachBtn.addEventListener("click", closeAttach);
+  els.attachOverlay.addEventListener("click", (e) => {
+    if (e.target === els.attachOverlay) closeAttach();
+  });
+
+  els.optCamera.addEventListener("click", () => {
+    closeAttach();
+    els.cameraInput.value = "";
+    els.cameraInput.click();
+  });
+  els.optGallery.addEventListener("click", () => {
+    closeAttach();
+    els.galleryInput.value = "";
+    els.galleryInput.click();
+  });
+  els.optFile.addEventListener("click", () => {
+    closeAttach();
+    els.fileInput.value = "";
+    els.fileInput.click();
+  });
+
+  els.cameraInput.addEventListener("change", () => addFiles(els.cameraInput.files));
+  els.galleryInput.addEventListener("change", () => addFiles(els.galleryInput.files));
+  els.fileInput.addEventListener("change", () => addFiles(els.fileInput.files));
+
   els.saveSettingsBtn.addEventListener("click", () => {
     saveSettings({
       demoMode: els.demoToggle.checked,
@@ -392,13 +804,14 @@
 
   els.clearChatBtn.addEventListener("click", () => {
     messages = [{ role: "assistant", content: WELCOME }];
+    pending = [];
+    renderPending();
     els.chat.innerHTML = "";
     appendBubble("assistant", WELCOME);
     persistHistory();
     closeSettings();
   });
 
-  // Service worker
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
       navigator.serviceWorker.register("./sw.js").catch(() => {});

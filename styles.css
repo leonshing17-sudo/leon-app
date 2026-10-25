@@ -89,8 +89,8 @@ body {
 }
 
 .icon-btn {
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
   border: none;
   border-radius: 12px;
   background: var(--bg-elevated);
@@ -136,6 +136,7 @@ body {
   white-space: pre-wrap;
   word-break: break-word;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+  max-width: 100%;
 }
 
 .msg.user .bubble {
@@ -156,6 +157,62 @@ body {
   color: var(--text-muted);
   font-size: 0.85rem;
   box-shadow: none;
+}
+
+.bubble-text:empty {
+  display: none;
+}
+
+.bubble-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.bubble-attachments:last-child {
+  margin-bottom: 0;
+}
+
+.bubble-att-img {
+  display: block;
+  max-width: min(240px, 70vw);
+  max-height: 220px;
+  border-radius: 12px;
+  object-fit: cover;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.msg.user .bubble-att-img {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.bubble-att-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.18);
+  font-size: 0.85rem;
+  max-width: 100%;
+}
+
+.msg.assistant .bubble-att-file {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.bubble-att-file .att-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+
+.bubble-att-file .att-meta {
+  opacity: 0.75;
+  font-size: 0.75rem;
+  flex-shrink: 0;
 }
 
 .typing {
@@ -182,14 +239,104 @@ body {
   backdrop-filter: blur(16px);
 }
 
+.attach-preview {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 0 4px 8px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.attach-preview.hidden {
+  display: none;
+}
+
+.attach-chip {
+  position: relative;
+  flex-shrink: 0;
+  width: 72px;
+  height: 72px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+}
+
+.attach-chip img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.attach-chip.file-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px;
+  width: 88px;
+}
+
+.attach-chip .file-icon {
+  font-size: 1.2rem;
+}
+
+.attach-chip .file-label {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.attach-chip .remove-att {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
 .composer-inner {
   display: flex;
   align-items: flex-end;
-  gap: 8px;
+  gap: 6px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: 22px;
-  padding: 8px 8px 8px 14px;
+  padding: 6px 8px 6px 6px;
+}
+
+.attach-btn {
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.attach-btn:active {
+  transform: scale(0.94);
+  background: rgba(96, 165, 250, 0.12);
 }
 
 #input {
@@ -202,7 +349,8 @@ body {
   resize: none;
   max-height: 120px;
   line-height: 1.4;
-  padding: 8px 0;
+  padding: 10px 0;
+  min-height: 44px;
 }
 
 #input::placeholder {
@@ -210,8 +358,8 @@ body {
 }
 
 .send-btn {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border: none;
   border-radius: 50%;
   background: var(--accent-strong);
@@ -229,6 +377,18 @@ body {
 
 .send-btn:not(:disabled):active {
   transform: scale(0.94);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .overlay {
@@ -256,6 +416,10 @@ body {
   animation: slideUp 0.25s ease;
 }
 
+.attach-sheet {
+  padding-bottom: calc(12px + var(--safe-bottom));
+}
+
 .sheet-handle {
   width: 40px;
   height: 4px;
@@ -267,6 +431,47 @@ body {
 .sheet h2 {
   margin: 0 0 16px;
   font-size: 1.15rem;
+}
+
+.attach-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-align: left;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 16px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  font: inherit;
+  min-height: 64px;
+}
+
+.attach-option:active {
+  transform: scale(0.98);
+  border-color: var(--accent);
+}
+
+.attach-option-icon {
+  font-size: 1.5rem;
+  width: 40px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.attach-option strong {
+  display: block;
+  font-size: 1rem;
+}
+
+.attach-option small {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  margin-top: 2px;
 }
 
 .toggle-row {
