@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <meta name="theme-color" content="#0f1117" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Leon" />
+  <meta name="description" content="Leon — 甚麼都會的 AI 助手" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <link rel="icon" type="image/svg+xml" href="icon.svg" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png" />
+  <title>Leon</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="header">
+      <div class="header-left">
+        <img src="icon.svg" alt="Leon" class="header-avatar" width="36" height="36" />
+        <div class="header-text">
+          <h1>Leon</h1>
+          <p class="status" id="statusText">甚麼都會嘅助手</p>
+        </div>
+      </div>
+      <button type="button" class="icon-btn" id="settingsBtn" aria-label="設定" title="設定">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+        </svg>
+      </button>
+    </header>
+
+    <main class="chat" id="chat" role="log" aria-live="polite"></main>
+
+    <form class="composer" id="composer" autocomplete="off">
+      <div class="composer-inner">
+        <textarea
+          id="input"
+          rows="1"
+          placeholder="同 Leon 傾吓…"
+          enterkeyhint="send"
+          aria-label="訊息"
+        ></textarea>
+        <button type="submit" class="send-btn" id="sendBtn" aria-label="傳送">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+          </svg>
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <div class="overlay hidden" id="settingsOverlay" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <h2 id="settingsTitle">設定</h2>
+
+      <label class="toggle-row">
+        <span>
+          <strong>示範模式</strong>
+          <small>無需 API Key，即刻用得到</small>
+        </span>
+        <input type="checkbox" id="demoToggle" />
+      </label>
+
+      <div class="field">
+        <label for="apiKeyInput">Groq API Key</label>
+        <input type="password" id="apiKeyInput" placeholder="gsk_…" autocomplete="off" />
+        <p class="hint">
+          免費申請：
+          <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer">console.groq.com/keys</a>
+          （Key 只存喺你部手機，唔會上傳去我哋伺服器）
+        </p>
+      </div>
+
+      <div class="field">
+        <label for="modelSelect">模型</label>
+        <select id="modelSelect">
+          <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile</option>
+          <option value="llama-3.1-8b-instant">llama-3.1-8b-instant（較快）</option>
+        </select>
+      </div>
+
+      <div class="sheet-actions">
+        <button type="button" class="btn secondary" id="clearChatBtn">清除對話</button>
+        <button type="button" class="btn primary" id="saveSettingsBtn">儲存</button>
+      </div>
+      <button type="button" class="btn ghost" id="closeSettingsBtn">關閉</button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

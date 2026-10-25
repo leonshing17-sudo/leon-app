@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Leon">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#60a5fa"/>
+      <stop offset="50%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#0f1117"/>
+  <rect x="32" y="32" width="448" height="448" rx="96" fill="url(#g)"/>
+  <circle cx="256" cy="220" r="78" fill="#0f1117" opacity="0.25"/>
+  <circle cx="256" cy="220" r="64" fill="#ffffff"/>
+  <circle cx="232" cy="214" r="10" fill="#0f1117"/>
+  <circle cx="280" cy="214" r="10" fill="#0f1117"/>
+  <path d="M226 248c18 18 42 18 60 0" fill="none" stroke="#0f1117" stroke-width="10" stroke-linecap="round"/>
+  <path d="M150 360c28-48 70-72 106-72s78 24 106 72" fill="#0f1117" opacity="0.35"/>
+  <path d="M170 355c24-40 58-60 86-60s62 20 86 60" fill="#ffffff"/>
+  <text x="256" y="455" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-size="48" font-weight="700" fill="#ffffff" opacity="0.95">L</text>
+</svg>
