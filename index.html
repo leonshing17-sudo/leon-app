@@ -20,19 +20,41 @@
   <div id="app">
     <header class="header">
       <div class="header-left">
+        <button type="button" class="icon-btn" id="menuBtn" aria-label="對話列表" title="對話列表">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="4" y1="6" x2="20" y2="6"/>
+            <line x1="4" y1="12" x2="20" y2="12"/>
+            <line x1="4" y1="18" x2="20" y2="18"/>
+          </svg>
+        </button>
         <img src="icon.svg" alt="Leon" class="header-avatar" width="36" height="36" />
         <div class="header-text">
-          <h1>Leon</h1>
+          <h1 id="chatTitle">Leon</h1>
           <p class="status" id="statusText">甚麼都會嘅助手</p>
         </div>
       </div>
-      <button type="button" class="icon-btn" id="settingsBtn" aria-label="設定" title="設定">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="3"/>
-          <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
-        </svg>
-      </button>
+      <div class="header-actions">
+        <button type="button" class="icon-btn" id="newChatBtn" aria-label="新對話" title="新對話">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 5v14M5 12h14"/>
+          </svg>
+        </button>
+        <button type="button" class="icon-btn" id="settingsBtn" aria-label="設定" title="設定">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+          </svg>
+        </button>
+      </div>
     </header>
+
+    <div class="tip-banner hidden" id="tipBanner" role="status">
+      <p>而家係示範模式，唔使 API key 都可以傾。想用真正 AI，撳下面開設定。</p>
+      <div class="tip-actions">
+        <button type="button" class="btn primary tip-btn" id="tipOpenSettings">開設定 · 用真正 AI</button>
+        <button type="button" class="btn ghost tip-dismiss" id="tipDismiss">知道喇</button>
+      </div>
+    </div>
 
     <main class="chat" id="chat" role="log" aria-live="polite"></main>
 
@@ -59,6 +81,19 @@
       </div>
     </form>
   </div>
+
+  <aside class="sidebar-overlay hidden" id="sidebarOverlay" aria-hidden="true">
+    <div class="sidebar" id="sidebar" role="dialog" aria-modal="true" aria-labelledby="sidebarTitle">
+      <div class="sidebar-header">
+        <h2 id="sidebarTitle">對話</h2>
+        <button type="button" class="icon-btn" id="closeSidebarBtn" aria-label="關閉">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <button type="button" class="btn primary sidebar-new" id="sidebarNewChat">＋ 新對話</button>
+      <div class="chat-list" id="chatList" role="list"></div>
+    </div>
+  </aside>
 
   <input type="file" id="cameraInput" accept="image/*" capture="environment" class="sr-only" tabindex="-1" aria-hidden="true" />
   <input type="file" id="galleryInput" accept="image/*" multiple class="sr-only" tabindex="-1" aria-hidden="true" />
@@ -94,7 +129,7 @@
   </div>
 
   <div class="overlay hidden" id="settingsOverlay" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
-    <div class="sheet">
+    <div class="sheet settings-sheet">
       <div class="sheet-handle"></div>
       <h2 id="settingsTitle">設定</h2>
 
@@ -108,12 +143,10 @@
 
       <div class="field">
         <label for="apiKeyInput">Groq API Key</label>
-        <input type="password" id="apiKeyInput" placeholder="gsk_…" autocomplete="off" />
-        <p class="hint">
-          免費申請：
-          <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer">console.groq.com/keys</a>
-          （Key 只存喺你部手機，唔會上傳去我哋伺服器）
-        </p>
+        <p class="api-explain">API key 就好似一條免費密碼，喺 Groq 網站拎嚟開啟真正 AI。</p>
+        <a class="btn groq-link" id="groqKeyLink" href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer">去 Groq 拎免費 API key</a>
+        <input type="password" id="apiKeyInput" placeholder="貼上 gsk_… 開頭嘅 Key" autocomplete="off" />
+        <p class="hint">Key 只存喺你部手機（localStorage），唔會上傳去我哋伺服器。我哋唔會幫你造 Key，要你自己去 Groq 拎再貼入嚟。</p>
       </div>
 
       <div class="field">
@@ -128,7 +161,7 @@
       </div>
 
       <div class="sheet-actions">
-        <button type="button" class="btn secondary" id="clearChatBtn">清除對話</button>
+        <button type="button" class="btn secondary" id="clearChatBtn">清除呢個對話</button>
         <button type="button" class="btn primary" id="saveSettingsBtn">儲存</button>
       </div>
       <button type="button" class="btn ghost" id="closeSettingsBtn">關閉</button>

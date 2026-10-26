@@ -1,4 +1,4 @@
-const CACHE = "leon-v2";
+const CACHE = "leon-v3";
 const ASSETS = [
   "./",
   "./index.html",

@@ -5,7 +5,10 @@
     apiKey: "leon_groq_api_key",
     demo: "leon_demo_mode",
     model: "leon_model",
-    history: "leon_chat_history",
+    history: "leon_chat_history", // legacy single-chat
+    chats: "leon_chats_v1",
+    activeChat: "leon_active_chat_id",
+    tipSeen: "leon_tip_seen_v1",
   };
 
   const VISION_MODELS = new Set([
@@ -32,7 +35,8 @@
     "嗨！我係 Leon 👋\n" +
     "一個咩都會幫到手嘅 AI 助手——功課、溫習、寫嘢、翻譯、日常問題，儘管問我。\n\n" +
     "而家可以影相、揀相，或者傳檔案畀我（撳輸入欄左邊 📎）。\n\n" +
-    "而家係「示範模式」，唔使 API Key 都可以傾。想用真正 AI（包括睇相），撳右上角設定，貼上免費 Groq API Key 就得。";
+    "而家係「示範模式」，唔使 API Key 都可以傾。想用真正 AI（包括睇相），撳右上角設定，去 Groq 拎免費 Key 貼上就得。\n\n" +
+    "想開新話題？撳右上 ＋ 或者左邊選單入面「新對話」。";
 
   const els = {
     chat: document.getElementById("chat"),
@@ -40,6 +44,7 @@
     input: document.getElementById("input"),
     sendBtn: document.getElementById("sendBtn"),
     statusText: document.getElementById("statusText"),
+    chatTitle: document.getElementById("chatTitle"),
     settingsBtn: document.getElementById("settingsBtn"),
     overlay: document.getElementById("settingsOverlay"),
     demoToggle: document.getElementById("demoToggle"),
@@ -58,8 +63,21 @@
     galleryInput: document.getElementById("galleryInput"),
     fileInput: document.getElementById("fileInput"),
     attachPreview: document.getElementById("attachPreview"),
+    menuBtn: document.getElementById("menuBtn"),
+    newChatBtn: document.getElementById("newChatBtn"),
+    sidebarOverlay: document.getElementById("sidebarOverlay"),
+    closeSidebarBtn: document.getElementById("closeSidebarBtn"),
+    sidebarNewChat: document.getElementById("sidebarNewChat"),
+    chatList: document.getElementById("chatList"),
+    tipBanner: document.getElementById("tipBanner"),
+    tipOpenSettings: document.getElementById("tipOpenSettings"),
+    tipDismiss: document.getElementById("tipDismiss"),
   };
 
+  /** @type {{id: string, title: string, messages: object[], updatedAt: number}[]} */
+  let chats = [];
+  /** @type {string|null} */
+  let activeChatId = null;
   /** @type {{role: string, content: string, attachments?: object[]}[]} */
   let messages = [];
   /** @type {{id: string, name: string, type: string, size: number, kind: string, previewUrl?: string, dataUrl?: string, textContent?: string}[]} */
@@ -124,53 +142,285 @@
     );
   }
 
-  function persistHistory() {
+  function slimMessages(list) {
+    return list.slice(-40).map((m) => {
+      const copy = { role: m.role, content: m.content };
+      if (m.attachments && m.attachments.length) {
+        copy.attachments = m.attachments.map((a) => ({
+          name: a.name,
+          type: a.type,
+          size: a.size,
+          kind: a.kind,
+          previewUrl:
+            a.kind === "image" && a.previewUrl && a.previewUrl.length < 180000
+              ? a.previewUrl
+              : undefined,
+        }));
+      }
+      return copy;
+    });
+  }
+
+  function titleFromMessages(list) {
+    const firstUser = (list || []).find(
+      (m) => m.role === "user" && (m.content || "").trim()
+    );
+    if (firstUser) {
+      const t = firstUser.content.trim().replace(/\s+/g, " ");
+      return t.length > 28 ? t.slice(0, 28) + "…" : t;
+    }
+    const hasAtt = (list || []).some(
+      (m) => m.role === "user" && m.attachments && m.attachments.length
+    );
+    if (hasAtt) return "附件對話";
+    return "新對話";
+  }
+
+  function persistChats() {
+    const active = chats.find((c) => c.id === activeChatId);
+    if (active) {
+      active.messages = slimMessages(messages);
+      active.title = titleFromMessages(messages);
+      active.updatedAt = Date.now();
+    }
     try {
-      const slim = messages.slice(-40).map((m) => {
-        const copy = { role: m.role, content: m.content };
-        if (m.attachments && m.attachments.length) {
-          copy.attachments = m.attachments.map((a) => ({
-            name: a.name,
-            type: a.type,
-            size: a.size,
-            kind: a.kind,
-            // Keep a lighter preview for images so history still shows thumbs
-            previewUrl:
-              a.kind === "image" && a.previewUrl && a.previewUrl.length < 180000
-                ? a.previewUrl
-                : undefined,
-          }));
-        }
-        return copy;
-      });
-      localStorage.setItem(STORAGE.history, JSON.stringify(slim));
+      localStorage.setItem(STORAGE.chats, JSON.stringify(chats));
+      if (activeChatId) {
+        localStorage.setItem(STORAGE.activeChat, activeChatId);
+      }
     } catch (_) {
       try {
-        const bare = messages.slice(-40).map((m) => ({
-          role: m.role,
-          content: m.content,
-          attachments: (m.attachments || []).map((a) => ({
-            name: a.name,
-            type: a.type,
-            size: a.size,
-            kind: a.kind,
+        const lighter = chats.map((c) => ({
+          ...c,
+          messages: (c.messages || []).map((m) => ({
+            role: m.role,
+            content: m.content,
+            attachments: (m.attachments || []).map((a) => ({
+              name: a.name,
+              type: a.type,
+              size: a.size,
+              kind: a.kind,
+            })),
           })),
         }));
-        localStorage.setItem(STORAGE.history, JSON.stringify(bare));
+        localStorage.setItem(STORAGE.chats, JSON.stringify(lighter));
       } catch (__) {
         /* quota */
       }
     }
   }
 
-  function loadHistory() {
+  function migrateLegacyHistory() {
     try {
       const raw = localStorage.getItem(STORAGE.history);
       if (!raw) return null;
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length) return parsed;
+      if (!Array.isArray(parsed) || !parsed.length) return null;
+      const chat = {
+        id: uid(),
+        title: titleFromMessages(parsed),
+        messages: parsed,
+        updatedAt: Date.now(),
+      };
+      localStorage.removeItem(STORAGE.history);
+      return chat;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function loadChatsFromStorage() {
+    try {
+      const raw = localStorage.getItem(STORAGE.chats);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length) {
+          chats = parsed;
+          activeChatId =
+            localStorage.getItem(STORAGE.activeChat) || chats[0].id;
+          if (!chats.find((c) => c.id === activeChatId)) {
+            activeChatId = chats[0].id;
+          }
+          return;
+        }
+      }
     } catch (_) {}
-    return null;
+
+    const legacy = migrateLegacyHistory();
+    if (legacy) {
+      chats = [legacy];
+      activeChatId = legacy.id;
+      persistChats();
+      return;
+    }
+
+    const welcome = {
+      id: uid(),
+      title: "歡迎",
+      messages: [{ role: "assistant", content: WELCOME }],
+      updatedAt: Date.now(),
+    };
+    chats = [welcome];
+    activeChatId = welcome.id;
+    persistChats();
+  }
+
+  function getActiveChat() {
+    return chats.find((c) => c.id === activeChatId) || null;
+  }
+
+  function renderChatList() {
+    const list = els.chatList;
+    list.innerHTML = "";
+    const sorted = chats.slice().sort((a, b) => b.updatedAt - a.updatedAt);
+    for (const c of sorted) {
+      const row = document.createElement("div");
+      row.className =
+        "chat-list-item" + (c.id === activeChatId ? " active" : "");
+      row.setAttribute("role", "listitem");
+
+      const main = document.createElement("button");
+      main.type = "button";
+      main.className = "chat-list-main";
+      const title = document.createElement("strong");
+      title.textContent = c.title || "新對話";
+      const meta = document.createElement("small");
+      const d = new Date(c.updatedAt || Date.now());
+      meta.textContent = d.toLocaleString("zh-HK", {
+        month: "numeric",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      main.appendChild(title);
+      main.appendChild(meta);
+      main.addEventListener("click", () => {
+        switchChat(c.id);
+        closeSidebar();
+      });
+
+      const actions = document.createElement("div");
+      actions.className = "chat-list-actions";
+
+      const renameBtn = document.createElement("button");
+      renameBtn.type = "button";
+      renameBtn.className = "chat-action";
+      renameBtn.setAttribute("aria-label", "重新命名");
+      renameBtn.textContent = "改名";
+      renameBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const next = prompt("對話名稱", c.title || "新對話");
+        if (next === null) return;
+        const t = next.trim();
+        if (!t) return;
+        c.title = t.slice(0, 40);
+        c.updatedAt = Date.now();
+        persistChats();
+        renderChatList();
+        updateHeaderTitle();
+      });
+
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "chat-action danger";
+      delBtn.setAttribute("aria-label", "刪除對話");
+      delBtn.textContent = "刪";
+      delBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!confirm("刪除呢個對話？")) return;
+        deleteChat(c.id);
+      });
+
+      actions.appendChild(renameBtn);
+      actions.appendChild(delBtn);
+      row.appendChild(main);
+      row.appendChild(actions);
+      list.appendChild(row);
+    }
+  }
+
+  function updateHeaderTitle() {
+    const c = getActiveChat();
+    els.chatTitle.textContent = c && c.title ? c.title : "Leon";
+  }
+
+  function paintMessages() {
+    els.chat.innerHTML = "";
+    for (const m of messages) {
+      if (m.role === "user" || m.role === "assistant" || m.role === "system") {
+        appendBubble(m.role, m.content, { attachments: m.attachments });
+      }
+    }
+  }
+
+  function switchChat(id) {
+    if (busy) return;
+    persistChats();
+    const c = chats.find((x) => x.id === id);
+    if (!c) return;
+    activeChatId = id;
+    messages = (c.messages || []).slice();
+    pending = [];
+    renderPending();
+    paintMessages();
+    updateHeaderTitle();
+    persistChats();
+    renderChatList();
+  }
+
+  function createNewChat() {
+    if (busy) return;
+    persistChats();
+    const chat = {
+      id: uid(),
+      title: "新對話",
+      messages: [],
+      updatedAt: Date.now(),
+    };
+    chats.unshift(chat);
+    activeChatId = chat.id;
+    messages = [];
+    pending = [];
+    renderPending();
+    els.chat.innerHTML = "";
+    updateHeaderTitle();
+    persistChats();
+    renderChatList();
+    closeSidebar();
+    els.input.focus();
+  }
+
+  function deleteChat(id) {
+    if (busy) return;
+    const idx = chats.findIndex((c) => c.id === id);
+    if (idx < 0) return;
+    chats.splice(idx, 1);
+    if (!chats.length) {
+      const welcome = {
+        id: uid(),
+        title: "歡迎",
+        messages: [{ role: "assistant", content: WELCOME }],
+        updatedAt: Date.now(),
+      };
+      chats = [welcome];
+      activeChatId = welcome.id;
+      messages = welcome.messages.slice();
+    } else if (activeChatId === id) {
+      activeChatId = chats[0].id;
+      messages = (chats[0].messages || []).slice();
+    }
+    pending = [];
+    renderPending();
+    paintMessages();
+    updateHeaderTitle();
+    persistChats();
+    renderChatList();
+  }
+
+  function persistHistory() {
+    persistChats();
+    renderChatList();
+    updateHeaderTitle();
   }
 
   function renderAttachmentsInto(container, attachments) {
@@ -253,12 +503,35 @@
     els.overlay.classList.add("hidden");
   }
 
+  function openSidebar() {
+    renderChatList();
+    els.sidebarOverlay.classList.remove("hidden");
+    els.sidebarOverlay.setAttribute("aria-hidden", "false");
+  }
+
+  function closeSidebar() {
+    els.sidebarOverlay.classList.add("hidden");
+    els.sidebarOverlay.setAttribute("aria-hidden", "true");
+  }
+
   function openAttach() {
     els.attachOverlay.classList.remove("hidden");
   }
 
   function closeAttach() {
     els.attachOverlay.classList.add("hidden");
+  }
+
+  function maybeShowTip() {
+    if (localStorage.getItem(STORAGE.tipSeen) === "1") return;
+    const { demoMode, apiKey } = loadSettings();
+    if (!demoMode && apiKey) return;
+    els.tipBanner.classList.remove("hidden");
+  }
+
+  function dismissTip() {
+    localStorage.setItem(STORAGE.tipSeen, "1");
+    els.tipBanner.classList.add("hidden");
   }
 
   function renderPending() {
@@ -392,10 +665,7 @@
     const files = Array.from(fileList || []);
     for (const file of files) {
       if (pending.length >= MAX_ATTACHMENTS) {
-        appendBubble(
-          "system",
-          `一次最多 ${MAX_ATTACHMENTS} 個附件。`
-        );
+        appendBubble("system", `一次最多 ${MAX_ATTACHMENTS} 個附件。`);
         break;
       }
       const att = await processFile(file);
@@ -425,7 +695,7 @@
           `收到你傳嘅附件，我已經接收到喇 ✅\n\n` +
           lines.join("\n") +
           (t ? `\n\n你仲講：「${t.slice(0, 60)}${t.length > 60 ? "…" : ""}」` : "") +
-          `\n\n示範模式會確認檔名同大小。想我真正睇相／讀內容 → 設定關閉示範模式，貼上免費 Groq API Key（會用可睇相模型）。`
+          `\n\n示範模式會確認檔名同大小。想我真正睇相／讀內容 → 設定關閉示範模式，去 Groq 拎免費 API key 貼上。`
         );
       }
       return (
@@ -441,9 +711,27 @@
       (t.length < 3 && /^(yo|hey)$/i.test(t))
     ) {
       if (isCanto || isZh) {
-        return "嗨！我係 Leon～有咩想問或者想幫手？可以打字，亦可以撳 📎 影相／揀相／傳檔案。";
+        return "嗨！我係 Leon～有咩想問或者想幫手？可以打字，亦可以撳 📎 影相／揀相／傳檔案。想開新話題可以撳 ＋。";
       }
-      return "Hey! I'm Leon — ask me anything, or tap 📎 to send a photo or file.";
+      return "Hey! I'm Leon — ask me anything, or tap 📎 to send a photo or file. Tap ＋ for a new chat.";
+    }
+
+    if (/api\s*key|API\s*key|api鍵|密鑰|groq/i.test(t)) {
+      if (isCanto || isZh) {
+        return (
+          "API key 就好似一條免費密碼，喺 Groq 網站拎嚟開啟真正 AI。\n\n" +
+          "步驟：\n" +
+          "1. 撳右上角設定\n" +
+          "2. 撳「去 Groq 拎免費 API key」\n" +
+          "3. 登入／註冊後複製 gsk_… 開頭嗰條\n" +
+          "4. 貼返入設定，關閉示範模式，撳儲存\n\n" +
+          "我唔可以幫你造 Key，要你自己去拎（免費）。"
+        );
+      }
+      return (
+        "An API key is like a free password from Groq that turns on real AI.\n\n" +
+        "Settings → “Get free Groq API key” → copy the gsk_… key → paste it back, turn off Demo, Save."
+      );
     }
 
     if (/功課|作业|作業|homework|study|溫習|复习|考試|考试|exam|math|數學|数学|英文|english/i.test(t)) {
@@ -508,20 +796,20 @@
       return (
         `收到你講：「${snippet}」\n\n` +
         "我係 Leon，示範模式而家會用模板回覆。可以問功課、翻譯、寫文，或者撳 📎 傳相／檔案。\n\n" +
-        "想要真正 AI → 設定 → 關閉示範模式 → 貼上 console.groq.com/keys 免費 Key。"
+        "想要真正 AI → 設定 →「去 Groq 拎免費 API key」→ 貼上 → 關閉示範模式。"
       );
     }
     if (isZh) {
       return (
         `收到：「${snippet}」\n\n` +
         "我是 Leon。示範模式會用模板回覆。可問功課、翻譯、寫作，或用 📎 傳相片／檔案。\n\n" +
-        "要真正 AI：設定 → 關閉示範模式 → 貼上免費 Groq API Key。"
+        "要真正 AI：設定 → 去 Groq 拿免費 API key → 貼上 → 關閉示範模式。"
       );
     }
     return (
       `Got your message: “${snippet}”\n\n` +
       "I'm Leon. Demo mode uses template replies. Try homework, translation, writing, or 📎 attachments.\n\n" +
-      "For real AI: Settings → turn off Demo → paste a free key from console.groq.com/keys."
+      "For real AI: Settings → get a free Groq API key → paste → turn off Demo."
     );
   }
 
@@ -558,7 +846,6 @@
       return textBody;
     }
 
-    /** Multimodal content for Groq vision models */
     const content = [{ type: "text", text: textBody }];
     for (const img of images.slice(0, 5)) {
       content.push({
@@ -620,14 +907,12 @@
         if (m.role === "assistant") {
           return { role: "assistant", content: m.content };
         }
-        // Rebuild multimodal if this turn had image dataUrls still in memory
         if (m.attachments && m.attachments.some((a) => a.dataUrl)) {
           return {
             role: "user",
             content: buildApiUserContent(m.content, m.attachments),
           };
         }
-        // Fallback: string content + file metadata notes
         if (m.attachments && m.attachments.length) {
           const note = m.attachments
             .map(
@@ -654,7 +939,7 @@
       openSettings(true);
       appendBubble(
         "system",
-        "請先貼上 Groq API Key，或開啟「示範模式」先試用。"
+        "請先去 Groq 拎免費 API key 貼上，或開啟「示範模式」先試用。"
       );
       return;
     }
@@ -721,22 +1006,18 @@
   }
 
   function initChat() {
-    const saved = loadHistory();
-    if (saved && saved.length) {
-      messages = saved;
-      for (const m of messages) {
-        if (m.role === "user" || m.role === "assistant") {
-          appendBubble(m.role, m.content, {
-            attachments: m.attachments,
-          });
-        }
-      }
-    } else {
+    loadChatsFromStorage();
+    const active = getActiveChat();
+    messages = active && active.messages ? active.messages.slice() : [];
+    if (!messages.length && chats.length === 1 && active.title === "歡迎") {
       messages = [{ role: "assistant", content: WELCOME }];
-      appendBubble("assistant", WELCOME);
-      persistHistory();
+      persistChats();
     }
+    paintMessages();
+    updateHeaderTitle();
     updateStatus();
+    renderChatList();
+    maybeShowTip();
   }
 
   // Events
@@ -758,6 +1039,20 @@
   els.overlay.addEventListener("click", (e) => {
     if (e.target === els.overlay) closeSettings();
   });
+
+  els.menuBtn.addEventListener("click", openSidebar);
+  els.closeSidebarBtn.addEventListener("click", closeSidebar);
+  els.sidebarOverlay.addEventListener("click", (e) => {
+    if (e.target === els.sidebarOverlay) closeSidebar();
+  });
+  els.newChatBtn.addEventListener("click", createNewChat);
+  els.sidebarNewChat.addEventListener("click", createNewChat);
+
+  els.tipOpenSettings.addEventListener("click", () => {
+    dismissTip();
+    openSettings(true);
+  });
+  els.tipDismiss.addEventListener("click", dismissTip);
 
   els.attachBtn.addEventListener("click", openAttach);
   els.closeAttachBtn.addEventListener("click", closeAttach);
@@ -792,6 +1087,7 @@
       model: els.modelSelect.value,
     });
     closeSettings();
+    dismissTip();
     appendBubble(
       "system",
       els.demoToggle.checked
