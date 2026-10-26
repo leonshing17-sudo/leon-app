@@ -1,4 +1,4 @@
-const CACHE = "leon-v3";
+const CACHE = "leon-v4";
 const ASSETS = [
   "./",
   "./index.html",
@@ -28,7 +28,12 @@ self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
   const url = new URL(req.url);
-  if (url.hostname === "api.groq.com") return;
+  if (
+    url.hostname === "api.groq.com" ||
+    url.hostname === "generativelanguage.googleapis.com" ||
+    url.hostname === "openrouter.ai"
+  )
+    return;
 
   event.respondWith(
     caches.match(req).then((cached) => {

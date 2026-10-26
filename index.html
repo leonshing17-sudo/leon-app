@@ -49,7 +49,7 @@
     </header>
 
     <div class="tip-banner hidden" id="tipBanner" role="status">
-      <p>而家係示範模式，唔使 API key 都可以傾。想用真正 AI，撳下面開設定。</p>
+      <p>而家係示範模式。想用真正 AI：開設定 → 揀 Google Gemini（香港推薦）→ 拎免費 Key。Groq 喺香港好多時 Forbidden。</p>
       <div class="tip-actions">
         <button type="button" class="btn primary tip-btn" id="tipOpenSettings">開設定 · 用真正 AI</button>
         <button type="button" class="btn ghost tip-dismiss" id="tipDismiss">知道喇</button>
@@ -142,22 +142,29 @@
       </label>
 
       <div class="field">
-        <label for="apiKeyInput">Groq API Key</label>
-        <p class="api-explain">API key 就好似一條免費密碼，喺 Groq 網站拎嚟開啟真正 AI。</p>
-        <a class="btn groq-link" id="groqKeyLink" href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer">去 Groq 拎免費 API key</a>
-        <input type="password" id="apiKeyInput" placeholder="貼上 gsk_… 開頭嘅 Key" autocomplete="off" />
-        <p class="hint">Key 只存喺你部手機（localStorage），唔會上傳去我哋伺服器。我哋唔會幫你造 Key，要你自己去 Groq 拎再貼入嚟。</p>
+        <label for="providerSelect">AI 供應商</label>
+        <select id="providerSelect">
+          <option value="gemini">Google Gemini（香港推薦）</option>
+          <option value="openrouter">OpenRouter（可選免費模型）</option>
+          <option value="groq">Groq（可能喺香港唔用得）</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="apiKeyInput">API Key（免費密碼）</label>
+        <p class="api-explain" id="apiExplain">
+          API key 就好似一條<strong>免費密碼</strong>，貼入嚟就可以開真正 AI。
+          Groq 喺香港好多時會顯示 Forbidden；請改用 <strong>Google Gemini</strong>。
+        </p>
+        <a class="btn groq-link" id="keyLink" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">去 Google AI Studio 拎免費 Gemini Key</a>
+        <input type="password" id="apiKeyInput" placeholder="貼上 API Key" autocomplete="off" />
+        <p class="hint" id="apiHint">Key 只存喺你部手機（localStorage），唔會上傳去我哋伺服器。我哋唔會代你註冊——要你自己免費拎再貼入嚟。</p>
       </div>
 
       <div class="field">
         <label for="modelSelect">模型</label>
-        <select id="modelSelect">
-          <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile</option>
-          <option value="llama-3.1-8b-instant">llama-3.1-8b-instant（較快）</option>
-          <option value="meta-llama/llama-4-scout-17b-16e-instruct">llama-4-scout（可睇相）</option>
-          <option value="qwen/qwen3.8-27b">qwen3.8-27b（可睇相）</option>
-        </select>
-        <p class="hint">傳相時會自動改用可睇相嘅模型（若你未揀）。</p>
+        <select id="modelSelect"></select>
+        <p class="hint" id="modelHint">Gemini 預設已支援睇相。傳相時會自動用可睇相嘅模型。</p>
       </div>
 
       <div class="sheet-actions">
